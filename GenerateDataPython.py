@@ -3,106 +3,162 @@ import time
 import pandas as pd
 import numpy as np
 from selenium.webdriver.common.by import By
+from concurrent.futures import ThreadPoolExecutor
+
+#Not used currently, but could be useful later, possibly in click_loadmore_button
+from selenium.common.exceptions import NoSuchElementException
+
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+
+def load_files():
+    AgentFinalList = pd.read_csv('FinalAgentList.csv')
+    MapList = pd.read_csv('MapList.csv')
+    agentLinkList = pd.read_csv('agentLinkList.csv')
+    AgentMapList = pd.read_csv('AgentMapComboList.csv')
+    AgentMapList = AgentMapList.assign(WinPct = 0, Matches = 0)
+    return AgentFinalList,MapList,agentLinkList,AgentMapList
+
+
+#Return selenium element text (used for multithreading)
+def element_text(element):
+    return element.text    
+
+
+#Return selenium element src (used for multithreading)
+def element_src(element):
+    return element.get_attribute("src")   
+
+
+#Function to click the loadmore button to load more matches
+def click_loadmore_button(window, driver):
+
+    for i in range(23):
+
+        try:
+
+            #Scroll to bottom of webpage
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+            #obtain button element
+            button = WebDriverWait(driver,6).until(EC.visibility_of_element_located((By.XPATH,"//button[text()=' Load More Matches ']")))
+
+            #Click button
+            button.click()
+
+            #Wait a second
+            time.sleep(1)
+            
+        except:
+            print("No loadmore button found, most likely an error with how many times you are pressing the button")
+            return
 
 
 #Main function for generating everything.
-
-
 def generateData(trackerLink):
 
 
     # Load data of Agent, Map, and Links to profiles of streamers.
+    AgentFinalList,MapList,agentLinkList,AgentMapList = load_files()
+
+
 
     #PROGRAM NOTE FOR FUTURE
     #Would be cool to make this connect to a SQL server so the dataset can be easily updated by multiple people, without having to manually download a new csv file
 
-    global AgentFinalList
-    global MapList
-    global AgentMapList
-    global agentLinkList
 
+
+
+
+    #Intialize webdriver (webpage)
     driver = webdriver.Chrome()
+
+    #Navigate to inputted persons tracker profile
     driver.get(trackerLink)
-    time.sleep(5)
-    # Get the button element
-    button = driver.find_element(By.XPATH, "//button[text()=' Load More Matches ']")
 
-    #PROGRAM NOTE IF PROBLEMS!
-    # Keep clicking the load more matches button as long as it exists (COULD CAUSE PROBLEMS IF THERE ARE A TON OF MATCHES, BECAUSE YOU HAVE A TIMER UNTIL PAGE REFRESHES!)
-    """
-    while button.is_displayed():
-    	window = driver.current_window_handle
-    	# Execute JavaScript code to scroll to the bottom of the page
-    	driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    	button.click()
-    	time.sleep(5)
+    #Wait for webpage to load fully before running scripts
+    time.sleep(7)
 
-    """
+
+    #get current window
     window = driver.current_window_handle
-    # Execute JavaScript code to scroll to the bottom of the page
-    #driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    #button.click()
-    #time.sleep(5)
+    
+    
+    #Click button while it is on the page, and as many times as can do before the time is up (3 minutes)
+    #Note that it can't really be clicked on for 3 minutes, because that leaves no time to then get the text/src of each element
+    click_loadmore_button(window,driver)
+
+
+
+
+
+    #Intialize empty arrays for each element that I want the text/src of
+
+    #Initialize empty array to append each matches map name to the array for later analysis
+    map_names = None
+
+    #Initialize empty array to append each matches map name to the array for later analysis
+    agent_names = None
+
+    #Initialize empty array to append each matches won rounds to the array for later analysis
+    scoreWonList = None
+
+    #Initialize empty array to append each matches lost rounds to the array for later analysis
+    scoreLostList = None
+
+
+
+
+
+    #Find the elements I want
 
     #Find Map names for each match
     maps = driver.find_elements(By.CLASS_NAME,"match__name")
 
-    #Initialize empty array to append each matches map name to the array for later analysis
-    map_names = []
 
-    #Append each matches map to array
-    for element in maps:
-        map_names.append(element.text)
-        
-
-    
-
-	#Find Agent names for each match
+    #Find Agent names for each match
     agents = driver.find_elements(By.XPATH,"//div[@class = 'match__portrait']//img")
 
-    
-    #Initialize empty array to append each matches map name to the array for later analysis
-    agent_names = []
-
-    #Append each matches map to array
-    for element in agents:
-    	agent_names.append(element.get_attribute("src"))
-
-    agent_names = pd.DataFrame(agent_names, columns = ["agent_names"])
-
-
-    
-    #Find Score of each match (To calculate if it was a win, loss, or draw)
 
     #Gets each matches rounds won element
     scoreWon = driver.find_elements(By.CLASS_NAME,"score--won")
 
-    #Initialize empty array to append each matches won rounds to the array for later analysis
-    scoreWonList = []
 
-    #Gets eatch matches rounds lost element
+    #Gets each matches rounds lost element
     scoreLost = driver.find_elements(By.CLASS_NAME,"score--lost")
 
-    #Initialize empty array to append each matches lost rounds to the array for later analysis
-    scoreLostList = []
 
-    #Append each matches rounds won to array
-    for element in scoreWon:
-    	scoreWonList.append(element.text)
 
-	#Append each matches rounds lost to array
-    for element in scoreLost:
-    	scoreLostList.append(element.text)
+
+
+
+    #Cool multithread stuff to append text for each element in scoreWon to scoreWonList
+    with ThreadPoolExecutor(max_workers = 3) as executor:
+        map_names = executor.map(element_text,maps)
+        agent_names = executor.map(element_src,agents)
+        scoreWonList = executor.map(element_text,scoreWon)
+        scoreLostList = executor.map(element_text, scoreLost)
 
 
 
     #Get Player Username
     player = driver.find_element(By.CLASS_NAME,"trn-ign__username")
     playerUsername = player.text
+
+    time.sleep(2)
+    driver.close()
+
+
+    #Load AgentMapComboList, as it is the main template for output.
+    
+
+
+    agent_names = pd.DataFrame(agent_names, columns = ["agent_names"])
+
+
     playerName = pd.DataFrame([playerUsername], columns = ["Username"])
 
-
-    driver.close()
 
     #Win/Lose extra
 
@@ -284,17 +340,19 @@ def generateData(trackerLink):
                     map_ = MapList.at[j,"Map"]
 
                     
+                    
                     AgentMapIndex = AgentMapList.loc[(AgentMapList['Agent'] == agent) & (AgentMapList["Map"] == map_)].index
 
                     AgentMapIndex = AgentMapIndex.tolist()
                     
 
                     if (len(combinedIndex) > 0) and ("Win" in output.loc[combinedIndex,"WinOrLose"].values):
-                        #win_count = len([i for i in range(len(combinedIndex)) if output[combinedIndex[i]]["WinOrLose"] == "Win"])
+
+                        indices = output.index[output['WinOrLose'] == 'Win']
+
+                        win_count = len((indices.intersection(combinedIndex)).tolist())
 
                         
-                        win_count = (len((output.loc[combinedIndex,"WinOrLose"]).index))
-
                         win_pct = win_count / len(combinedIndex)
                         AgentMapList.loc[AgentMapIndex,"WinPct"] = win_pct
                         AgentMapList.loc[AgentMapIndex,"Matches"] = len(combinedIndex)
@@ -302,55 +360,16 @@ def generateData(trackerLink):
                     elif (len(combinedIndex) > 0) and ("Win" not in output.loc[combinedIndex,"WinOrLose"].values):
                         AgentMapList.loc[AgentMapIndex,"Matches"] = len(combinedIndex)
 
-
-
     AgentMapList = pd.concat([playerName,AgentMapList], axis = 1)
     AgentMapList['Username'] = playerUsername
     AgentMapList = AgentMapList.sort_values(by = 'Matches', ascending = False)
 
     return(AgentMapList)
-    
-
-
-AgentFinalList = pd.read_csv('FinalAgentList.csv')
-
-MapList = pd.read_csv('MapList.csv')
-
-AgentMapList = pd.read_csv('AgentMapComboList.csv')
-
-AgentMapList = AgentMapList.assign(WinPct = 0, Matches = 0)
-
-agentLinkList = pd.DataFrame(columns = ['Jett','Kayo','Chamber'], index = range(1))
-
-agentLinkList['Jett'] = "https://titles.trackercdn.com/valorant-api/agents/add6443a-41bd-e414-f6ad-e58d267f4e95/displayicon.png"
-agentLinkList['Kayo'] = "https://titles.trackercdn.com/valorant-api/agents/601dbbe7-43ce-be57-2a40-4abd24953621/displayicon.png"
-agentLinkList['Chamber'] = "https://titles.trackercdn.com/valorant-api/agents/22697a3d-45bf-8dd7-4fec-84a9e28c69d7/displayicon.png"
-agentLinkList['Astra'] = "https://titles.trackercdn.com/valorant-api/agents/41fb69c1-4189-7b37-f117-bcaf1e96f1bf/displayicon.png"
-agentLinkList['Breach'] = "https://titles.trackercdn.com/valorant-api/agents/5f8d3a7f-467b-97f3-062c-13acf203c006/displayicon.png"
-agentLinkList['Brimstone'] = "https://titles.trackercdn.com/valorant-api/agents/9f0d8ba9-4140-b941-57d3-a7ad57c6b417/displayicon.png"
-agentLinkList['Cypher'] = "https://titles.trackercdn.com/valorant-api/agents/117ed9e3-49f3-6512-3ccf-0cada7e3823b/displayicon.png"
-agentLinkList['Fade'] = "https://titles.trackercdn.com/valorant-api/agents/dade69b4-4f5a-8528-247b-219e5a1facd6/displayicon.png"
-agentLinkList['Killjoy'] = "https://titles.trackercdn.com/valorant-api/agents/1e58de9c-4950-5125-93e9-a0aee9f98746/displayicon.png"
-agentLinkList['Neon'] = "https://titles.trackercdn.com/valorant-api/agents/bb2a4828-46eb-8cd1-e765-15848195d751/displayicon.png"
-agentLinkList['Omen'] = "https://titles.trackercdn.com/valorant-api/agents/8e253930-4c05-31dd-1b6c-968525494517/displayicon.png"
-agentLinkList['Phoenix'] = "https://titles.trackercdn.com/valorant-api/agents/eb93336a-449b-9c1b-0a54-a891f7921d69/displayicon.png"
-agentLinkList['Raze'] = "https://titles.trackercdn.com/valorant-api/agents/f94c3b30-42be-e959-889c-5aa313dba261/displayicon.png"
-agentLinkList['Reyna'] = "https://titles.trackercdn.com/valorant-api/agents/a3bfb853-43b2-7238-a4f1-ad90e9e46bcc/displayicon.png"
-agentLinkList['Sage'] = "https://titles.trackercdn.com/valorant-api/agents/569fdd95-4d10-43ab-ca70-79becc718b46/displayicon.png"
-agentLinkList['Skye'] = "https://titles.trackercdn.com/valorant-api/agents/6f2a04ca-43e0-be17-7f36-b3908627744d/displayicon.png"
-agentLinkList['Sova'] = "https://titles.trackercdn.com/valorant-api/agents/320b2a48-4d9b-a075-30f1-1f93a9b638fa/displayicon.png"
-agentLinkList['Viper'] = "https://titles.trackercdn.com/valorant-api/agents/707eab51-4836-f488-046a-cda6bf494859/displayicon.png"
-agentLinkList['Yoru'] = "https://titles.trackercdn.com/valorant-api/agents/7f94d92c-4234-0a36-9646-3a87eb8b5c89/displayicon.png"
-agentLinkList['Harbor'] = "https://titles.trackercdn.com/valorant-api/agents/…78ed7-4637-86d9-7e41-71ba8c293152/displayicon.png"
 
 
 
-
-
-
-
+#Load links to each persons profile
 TwitchTrackerLinks = pd.read_csv('TwitchUsernameTrackerLink.csv')
-
 
 for index, row in TwitchTrackerLinks.iterrows():
     newDataFrame = generateData(row['TrackerLink'])
@@ -358,9 +377,6 @@ for index, row in TwitchTrackerLinks.iterrows():
     newDataFrame.to_csv(outputName + '.csv')
 
 
-
-#newDataFrame = (generateData("https://tracker.gg/valorant/profile/riot/SEN%20zekken%235193/matches?playlist=competitive"))
-#newDataFrame.to_csv('output.csv', index=True)
 
 
 
