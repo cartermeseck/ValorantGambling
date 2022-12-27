@@ -375,10 +375,3 @@ for index, row in TwitchTrackerLinks.iterrows():
     newDataFrame = generateData(row['TrackerLink'])
     outputName = row['TwitchName']
     newDataFrame.to_csv(outputName + '.csv')
-
-
-
-
-
-
-
