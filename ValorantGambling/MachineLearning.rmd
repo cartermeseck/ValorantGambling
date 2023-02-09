@@ -1,0 +1,55 @@
+---
+title: "MachineLearning"
+author: "Carter MESECK"
+date: "2022-12-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+Dataset = read.csv("Testingstuffss.csv")
+Dataset = Dataset[,-1]
+
+
+set.seed(1)
+
+#train = sample(1:nrow(Dataset),nrow(Dataset)/3, replace=FALSE)
+#test = (-train)
+
+n <- nrow(Dataset)
+
+train <- sample(1:n, n * 0.75, replace = FALSE)
+test <- setdiff(1:n, train)
+
+
+glm.fit = glm(WinGame~., data=Dataset,subset=train,family='binomial')
+
+glm.prob = predict(glm.fit,Dataset[test,],type='response') 
+head(glm.prob) #P(Y=1|X)
+head(Dataset[test,]$WinGame)
+
+summary(glm.prob)
+
+
+glm.pred = rep(0,length(test))
+glm.pred[glm.prob > .45] = 1
+
+
+mis.rates = data.frame()
+
+for(i in seq(from = 0, to = 0.9, by = 0.01)) {
+  print(i)
+  glm.pred = rep(0,length(test))
+  glm.pred[glm.prob > i] = 1
+  # what is our misclassification rate? 
+  print(1-mean(glm.pred == Dataset[test,]$WinGame))
+}
+
+# what is our misclassification rate? 
+1-mean(glm.pred == Dataset[test,]$WinGame)
+
+```
+
